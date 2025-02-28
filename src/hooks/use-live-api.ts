@@ -37,6 +37,7 @@ export type UseLiveAPIResults = {
 export function useLiveAPI({
   url,
   apiKey,
+  topic,
 }: MultimodalLiveAPIClientConnection): UseLiveAPIResults {
   // API key is now optional since it's handled by the proxy server
   const client = useMemo(
@@ -46,9 +47,45 @@ export function useLiveAPI({
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
 
   const [connected, setConnected] = useState(false);
-  const [config, setConfig] = useState<LiveConfig>({
-    model: "models/gemini-2.0-flash-exp",
+  
+  // Include the interview topic in the system instructions if provided
+  const [config, setConfig] = useState<LiveConfig>(() => {
+    const baseConfig: LiveConfig = {
+      model: "models/gemini-2.0-flash-exp",
+    };
+    
+    // If a topic is provided, add system instructions for the interview
+    if (topic) {
+      baseConfig.systemInstruction = {
+        parts: [
+          {
+            text: `You are an AI interviewer for a ${topic.title} position. 
+This is a ${topic.title} interview focusing on: ${topic.description}.
+Ask relevant questions for this role, challenge the candidate with real-world scenarios, and provide feedback.
+Your tone should be professional but conversational.
+Structure the interview progressively from easier to more challenging questions.
+Limit your responses to around 2-3 sentences to maintain a natural conversation flow.
+Start by introducing yourself and the purpose of the interview.`
+          }
+        ]
+      };
+      
+      // Also include responseModalities to enable audio
+      baseConfig.generationConfig = {
+        responseModalities: "audio",
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: "Kore" // A natural sounding voice
+            }
+          }
+        }
+      };
+    }
+    
+    return baseConfig;
   });
+  
   const [volume, setVolume] = useState(0);
 
   // register audio for streaming server -> speakers

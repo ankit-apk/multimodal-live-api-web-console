@@ -55,9 +55,18 @@ interface MultimodalLiveClientEventTypes {
   toolcallcancellation: (toolcallCancellation: ToolCallCancellation) => void;
 }
 
+// Interview topic type
+export interface InterviewTopic {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+}
+
 export type MultimodalLiveAPIClientConnection = {
   url?: string;
   apiKey?: string; // Make API key optional since it's handled by proxy
+  topic?: InterviewTopic; // Add interview topic
 };
 
 /**

@@ -19,18 +19,28 @@ import { useLiveAPI, UseLiveAPIResults } from "../hooks/use-live-api";
 
 const LiveAPIContext = createContext<UseLiveAPIResults | undefined>(undefined);
 
+// Define interview topic type
+export interface InterviewTopic {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+}
+
 export type LiveAPIProviderProps = {
   children: ReactNode;
   url?: string;
   apiKey?: string;
+  topic?: InterviewTopic;
 };
 
 export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({
   url,
   apiKey,
+  topic,
   children,
 }) => {
-  const liveAPI = useLiveAPI({ url, apiKey });
+  const liveAPI = useLiveAPI({ url, apiKey, topic });
 
   return (
     <LiveAPIContext.Provider value={liveAPI}>
