@@ -6,6 +6,10 @@ This repository contains a react-based starter app for using the [Multimodal Liv
 
 Watch the demo of the Multimodal Live API [here](https://www.youtube.com/watch?v=J_q7JY1XxFE).
 
+## Security Features
+
+This application includes a secure proxy server that protects your Gemini API key by keeping it on the server side rather than exposing it in frontend code. This prevents the API key from being visible in browser network requests.
+
 ## Usage
 
 To get started, [create a free Gemini API key](https://aistudio.google.com/apikey) and add it to the `.env` file. Then:
@@ -13,6 +17,8 @@ To get started, [create a free Gemini API key](https://aistudio.google.com/apike
 ```
 $ npm install && npm start
 ```
+
+This will start both the React frontend application and the proxy server.
 
 We have provided several example applications on other branches of this repository:
 
@@ -123,4 +129,4 @@ Your app is ready to be deployed!
 
 See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
-_This is an experiment showcasing the Multimodal Live API, not an official Google product. We’ll do our best to support and maintain this experiment but your mileage may vary. We encourage open sourcing projects as a way of learning from each other. Please respect our and other creators' rights, including copyright and trademark rights when present, when sharing these works and creating derivative work. If you want more info on Google's policy, you can find that [here](https://developers.google.com/terms/site-policies)._
+_This is an experiment showcasing the Multimodal Live API, not an official Google product. We'll do our best to support and maintain this experiment but your mileage may vary. We encourage open sourcing projects as a way of learning from each other. Please respect our and other creators' rights, including copyright and trademark rights when present, when sharing these works and creating derivative work. If you want more info on Google's policy, you can find that [here](https://developers.google.com/terms/site-policies)._

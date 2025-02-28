@@ -57,7 +57,7 @@ interface MultimodalLiveClientEventTypes {
 
 export type MultimodalLiveAPIClientConnection = {
   url?: string;
-  apiKey: string;
+  apiKey?: string; // Make API key optional since it's handled by proxy
 };
 
 /**
@@ -73,13 +73,11 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
     return { ...this.config };
   }
 
-  constructor({ url, apiKey }: MultimodalLiveAPIClientConnection) {
+  constructor({ url }: MultimodalLiveAPIClientConnection) {
     super();
-    url =
-      url ||
-      `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
-    url += `?key=${apiKey}`;
-    this.url = url;
+    // Use proxy server's WebSocket endpoint instead of direct connection
+    // The proxy will add the API key server-side
+    this.url = url || `ws://${window.location.hostname}:3001/api/ws`;
     this.send = this.send.bind(this);
   }
 

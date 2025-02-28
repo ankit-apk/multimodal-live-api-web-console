@@ -22,7 +22,7 @@ const LiveAPIContext = createContext<UseLiveAPIResults | undefined>(undefined);
 export type LiveAPIProviderProps = {
   children: ReactNode;
   url?: string;
-  apiKey: string;
+  apiKey?: string;
 };
 
 export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({

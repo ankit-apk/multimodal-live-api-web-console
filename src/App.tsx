@@ -22,13 +22,9 @@ import { Altair } from "./components/altair/Altair";
 import ControlTray from "./components/control-tray/ControlTray";
 import cn from "classnames";
 
-const API_KEY = process.env.REACT_APP_GEMINI_API_KEY as string;
-if (typeof API_KEY !== "string") {
-  throw new Error("set REACT_APP_GEMINI_API_KEY in .env");
-}
-
-const host = "generativelanguage.googleapis.com";
-const uri = `wss://${host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+// No need to get API key in frontend as it's now handled by the proxy server
+// We can optionally validate if the proxy server is reachable
+const proxyUri = `ws://${window.location.hostname}:3001/api/ws`;
 
 function App() {
   // this video reference is used for displaying the active stream, whether that is the webcam or screen capture
@@ -39,7 +35,7 @@ function App() {
 
   return (
     <div className="App">
-      <LiveAPIProvider url={uri} apiKey={API_KEY}>
+      <LiveAPIProvider url={proxyUri}>
         <div className="streaming-console">
           <SidePanel />
           <main>

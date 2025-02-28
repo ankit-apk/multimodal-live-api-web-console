@@ -38,6 +38,7 @@ export function useLiveAPI({
   url,
   apiKey,
 }: MultimodalLiveAPIClientConnection): UseLiveAPIResults {
+  // API key is now optional since it's handled by the proxy server
   const client = useMemo(
     () => new MultimodalLiveClient({ url, apiKey }),
     [url, apiKey],
