@@ -17,7 +17,6 @@
 import { useRef, useState } from "react";
 import "./App.scss";
 import { LiveAPIProvider } from "./contexts/LiveAPIContext";
-import SidePanel from "./components/side-panel/SidePanel";
 import { Altair } from "./components/altair/Altair";
 import ControlTray from "./components/control-tray/ControlTray";
 import cn from "classnames";
@@ -48,7 +47,7 @@ function App() {
           </header>
           
           <div className="meet-content">
-            <main className="video-area">
+            <main className="video-area full-width">
               <div className={cn("video-container", {
                 "has-video": videoRef.current && videoStream,
               })}>
@@ -79,8 +78,6 @@ function App() {
                 onVideoStreamChange={setVideoStream}
               />
             </main>
-            
-            <SidePanel />
           </div>
         </div>
       </LiveAPIProvider>
