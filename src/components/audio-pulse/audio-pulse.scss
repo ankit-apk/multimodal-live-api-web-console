@@ -1,8 +1,10 @@
 .audioPulse {
   display: flex;
   width: 24px;
+  height: 24px;
   justify-content: space-evenly;
   align-items: center;
+  position: relative;
   transition: all 0.5s;
 
   & > div {
@@ -12,13 +14,15 @@
     min-height: 4px;
     border-radius: 1000px;
     transition: height 0.1s;
+    position: absolute;
+    bottom: 50%;
+    transform: translateY(50%);
   }
 
   &.hover > div {
     animation: hover 1.4s infinite alternate ease-in-out;
   }
 
-  height: 4px;
   transition: opacity 0.333s;
 
   &.active {

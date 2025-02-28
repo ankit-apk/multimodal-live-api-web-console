@@ -114,6 +114,9 @@
     display: flex;
     gap: 8px;
     margin-top: 8px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
     
     .audioPulse {
       width: auto;
