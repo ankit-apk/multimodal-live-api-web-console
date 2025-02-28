@@ -36,30 +36,52 @@ function App() {
   return (
     <div className="App">
       <LiveAPIProvider url={proxyUri}>
-        <div className="streaming-console">
-          <SidePanel />
-          <main>
-            <div className="main-app-area">
-              {/* APP goes here */}
-              <Altair />
-              <video
-                className={cn("stream", {
-                  hidden: !videoRef.current || !videoStream,
-                })}
-                ref={videoRef}
-                autoPlay
-                playsInline
-              />
+        <div className="meet-container">
+          <header className="meet-header">
+            <div className="meet-logo">AI Interview Prep</div>
+            <div className="meet-info">Interview Session</div>
+            <div className="meet-actions">
+              <button className="action-button">
+                <span className="material-symbols-outlined">info</span>
+              </button>
             </div>
+          </header>
+          
+          <div className="meet-content">
+            <main className="video-area">
+              <div className={cn("video-container", {
+                "has-video": videoRef.current && videoStream,
+              })}>
+                {/* Main video display */}
+                <video
+                  className={cn("main-video-stream", {
+                    hidden: !videoRef.current || !videoStream,
+                  })}
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                />
+                {/* When no video is active, show placeholder */}
+                {(!videoRef.current || !videoStream) && (
+                  <div className="video-placeholder">
+                    <div className="placeholder-icon">
+                      <span className="material-symbols-outlined">person</span>
+                    </div>
+                    <p>Turn on your camera to start the interview</p>
+                  </div>
+                )}
+                <Altair className="altair-overlay" />
+              </div>
 
-            <ControlTray
-              videoRef={videoRef}
-              supportsVideo={true}
-              onVideoStreamChange={setVideoStream}
-            >
-              {/* put your own buttons here */}
-            </ControlTray>
-          </main>
+              <ControlTray
+                videoRef={videoRef}
+                supportsVideo={true}
+                onVideoStreamChange={setVideoStream}
+              />
+            </main>
+            
+            <SidePanel />
+          </div>
         </div>
       </LiveAPIProvider>
     </div>

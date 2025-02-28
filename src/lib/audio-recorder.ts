@@ -40,72 +40,159 @@ export class AudioRecorder extends EventEmitter {
   vuWorklet: AudioWorkletNode | undefined;
 
   private starting: Promise<void> | null = null;
+  private initializationAttempts: number = 0;
+  private maxInitializationAttempts: number = 3;
 
   constructor(public sampleRate = 16000) {
     super();
   }
 
   async start() {
+    // Don't try to restart if we're already starting
+    if (this.starting) {
+      console.log("AudioRecorder already starting, waiting for completion");
+      try {
+        await this.starting;
+        return this;
+      } catch (error) {
+        console.error("Error waiting for audio recorder to start:", error);
+        throw error;
+      }
+    }
+
+    // Don't try to restart if we're already recording
+    if (this.recording) {
+      console.log("AudioRecorder already recording");
+      return this;
+    }
+
+    if (this.initializationAttempts >= this.maxInitializationAttempts) {
+      console.error("Maximum number of initialization attempts reached");
+      this.emit("error", new Error("Maximum number of initialization attempts reached"));
+      return this;
+    }
+
+    this.initializationAttempts++;
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("Could not request user media");
+      const error = new Error("MediaDevices API not supported");
+      this.emit("error", error);
+      throw error;
     }
 
     this.starting = new Promise(async (resolve, reject) => {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.audioContext = await audioContext({ sampleRate: this.sampleRate });
-      this.source = this.audioContext.createMediaStreamSource(this.stream);
+      try {
+        // Request audio permissions
+        this.stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          } 
+        });
+        
+        // Create audio context
+        this.audioContext = await audioContext({ sampleRate: this.sampleRate });
+        
+        // Create source node
+        this.source = this.audioContext.createMediaStreamSource(this.stream);
 
-      const workletName = "audio-recorder-worklet";
-      const src = createWorketFromSrc(workletName, AudioRecordingWorklet);
+        // Add recording worklet
+        const workletName = "audio-recorder-worklet";
+        const src = createWorketFromSrc(workletName, AudioRecordingWorklet);
 
-      await this.audioContext.audioWorklet.addModule(src);
-      this.recordingWorklet = new AudioWorkletNode(
-        this.audioContext,
-        workletName,
-      );
+        await this.audioContext.audioWorklet.addModule(src);
+        this.recordingWorklet = new AudioWorkletNode(
+          this.audioContext,
+          workletName,
+        );
 
-      this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
-        // worklet processes recording floats and messages converted buffer
-        const arrayBuffer = ev.data.data.int16arrayBuffer;
+        this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
+          // worklet processes recording floats and messages converted buffer
+          if (ev.data && ev.data.data && ev.data.data.int16arrayBuffer) {
+            const arrayBuffer = ev.data.data.int16arrayBuffer;
+            const arrayBufferString = arrayBufferToBase64(arrayBuffer);
+            this.emit("data", arrayBufferString);
+          }
+        };
+        
+        this.source.connect(this.recordingWorklet);
 
-        if (arrayBuffer) {
-          const arrayBufferString = arrayBufferToBase64(arrayBuffer);
-          this.emit("data", arrayBufferString);
+        // Add VU meter worklet
+        const vuWorkletName = "vu-meter";
+        await this.audioContext.audioWorklet.addModule(
+          createWorketFromSrc(vuWorkletName, VolMeterWorket),
+        );
+        this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
+        this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
+          if (ev.data && typeof ev.data.volume === 'number') {
+            this.emit("volume", ev.data.volume);
+          }
+        };
+
+        this.source.connect(this.vuWorklet);
+        this.recording = true;
+        
+        // Resume the audio context if it's suspended
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
         }
-      };
-      this.source.connect(this.recordingWorklet);
-
-      // vu meter worklet
-      const vuWorkletName = "vu-meter";
-      await this.audioContext.audioWorklet.addModule(
-        createWorketFromSrc(vuWorkletName, VolMeterWorket),
-      );
-      this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
-      this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
-        this.emit("volume", ev.data.volume);
-      };
-
-      this.source.connect(this.vuWorklet);
-      this.recording = true;
-      resolve();
-      this.starting = null;
+        
+        resolve();
+      } catch (error) {
+        console.error("Error starting audio recorder:", error);
+        this.emit("error", error);
+        reject(error);
+      } finally {
+        this.starting = null;
+      }
     });
+
+    try {
+      await this.starting;
+      console.log("AudioRecorder successfully started");
+      return this;
+    } catch (error) {
+      console.error("Failed to start AudioRecorder:", error);
+      this.stop();
+      throw error;
+    }
   }
 
   stop() {
     // its plausible that stop would be called before start completes
     // such as if the websocket immediately hangs up
     const handleStop = () => {
-      this.source?.disconnect();
-      this.stream?.getTracks().forEach((track) => track.stop());
-      this.stream = undefined;
-      this.recordingWorklet = undefined;
-      this.vuWorklet = undefined;
+      try {
+        if (this.source) {
+          this.source.disconnect();
+          this.source = undefined;
+        }
+        
+        if (this.stream) {
+          this.stream.getTracks().forEach((track) => track.stop());
+          this.stream = undefined;
+        }
+        
+        this.recordingWorklet = undefined;
+        this.vuWorklet = undefined;
+        this.recording = false;
+        
+        console.log("AudioRecorder stopped");
+      } catch (error) {
+        console.error("Error stopping AudioRecorder:", error);
+      }
     };
+
     if (this.starting) {
-      this.starting.then(handleStop);
-      return;
+      this.starting.then(handleStop).catch((error) => {
+        console.error("Error in stopping after start:", error);
+        handleStop();
+      });
+      return this;
     }
+    
     handleStop();
+    return this;
   }
 }

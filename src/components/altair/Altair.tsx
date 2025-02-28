@@ -18,6 +18,11 @@ import { useEffect, useRef, useState, memo } from "react";
 import vegaEmbed from "vega-embed";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { ToolCall } from "../../multimodal-live-types";
+import cn from "classnames";
+
+interface AltairProps {
+  className?: string;
+}
 
 const declaration: FunctionDeclaration = {
   name: "render_altair",
@@ -35,7 +40,39 @@ const declaration: FunctionDeclaration = {
   },
 };
 
-function AltairComponent() {
+const interviewSystemPrompt = `You are an AI Interview Coach, designed to simulate a real job interview experience. Your role is to conduct professional interviews for job candidates in a variety of fields. Follow these guidelines:
+
+1. INTRODUCTION:
+   - Introduce yourself as the interviewer with a professional greeting
+   - Ask the candidate about their background, experience, and what position they're interviewing for
+   - Maintain a professional but approachable tone throughout the session
+
+2. INTERVIEW FLOW:
+   - Based on the candidate's background and target position, ask relevant questions
+   - Start with general questions about their experience and skills
+   - Progress to more specific technical questions related to their field
+   - Include behavioral questions to assess soft skills
+   - Ask the candidate to share their screen when appropriate for demonstrating skills
+   - Request they solve problems or show examples of their work when relevant
+
+3. ADAPTABILITY:
+   - Adjust question difficulty based on the candidate's responses
+   - Provide gentle prompts if they seem stuck
+   - Ask follow-up questions to dig deeper into interesting responses
+
+4. FEEDBACK:
+   - Provide constructive feedback on their answers
+   - Highlight strengths while noting areas for improvement
+   - Offer suggestions for better interview performance
+
+5. CONCLUSION:
+   - Wrap up the interview professionally
+   - Ask if they have questions about the position or company
+   - Thank them for their time
+
+Remember to speak clearly and professionally as if you are a human interviewer conducting an actual job interview. Never break character or reference that you are an AI. Provide a realistic interview experience that helps candidates prepare for actual job interviews.`;
+
+function AltairComponent({ className }: AltairProps) {
   const [jsonString, setJSONString] = useState<string>("");
   const { client, setConfig } = useLiveAPIContext();
 
@@ -51,7 +88,7 @@ function AltairComponent() {
       systemInstruction: {
         parts: [
           {
-            text: 'You are my helpful assistant. Any time I ask you for a graph call the "render_altair" function I have provided you. Dont ask for additional information just make your best judgement.',
+            text: interviewSystemPrompt,
           },
         ],
       },
@@ -101,7 +138,8 @@ function AltairComponent() {
       vegaEmbed(embedRef.current, JSON.parse(jsonString));
     }
   }, [embedRef, jsonString]);
-  return <div className="vega-embed" ref={embedRef} />;
+  
+  return <div className={cn("vega-embed", className)} ref={embedRef} />;
 }
 
 export const Altair = memo(AltairComponent);

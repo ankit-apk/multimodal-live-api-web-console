@@ -38,19 +38,29 @@ type MediaStreamButtonProps = {
   offIcon: string;
   start: () => Promise<any>;
   stop: () => any;
+  label: string;
+  className?: string;
 };
 
 /**
  * button used for triggering webcam or screen-capture
  */
 const MediaStreamButton = memo(
-  ({ isStreaming, onIcon, offIcon, start, stop }: MediaStreamButtonProps) =>
+  ({ isStreaming, onIcon, offIcon, start, stop, label, className }: MediaStreamButtonProps) =>
     isStreaming ? (
-      <button className="action-button" onClick={stop}>
+      <button 
+        className={cn("control-button", className, { "active": isStreaming })} 
+        onClick={stop}
+        title={`Turn off ${label}`}
+      >
         <span className="material-symbols-outlined">{onIcon}</span>
       </button>
     ) : (
-      <button className="action-button" onClick={start}>
+      <button 
+        className={cn("control-button", className)}
+        onClick={start}
+        title={`Turn on ${label}`}
+      >
         <span className="material-symbols-outlined">{offIcon}</span>
       </button>
     ),
@@ -69,8 +79,11 @@ function ControlTray({
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
+  const micInitializedRef = useRef<boolean>(false);
+  const isMicStartingRef = useRef<boolean>(false);
 
   const { client, connected, connect, disconnect, volume } =
     useLiveAPIContext();
@@ -80,6 +93,7 @@ function ControlTray({
       connectButtonRef.current.focus();
     }
   }, [connected]);
+  
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--volume",
@@ -87,129 +101,319 @@ function ControlTray({
     );
   }, [inVolume]);
 
+  // Add event listener for audio recorder errors
   useEffect(() => {
-    const onData = (base64: string) => {
-      client.sendRealtimeInput([
-        {
-          mimeType: "audio/pcm;rate=16000",
-          data: base64,
-        },
-      ]);
+    const onAudioError = (error: Error) => {
+      console.error("Audio recorder error:", error);
+      setMicError(error.message || "Error with microphone access");
+      setMuted(true);
     };
-    if (connected && !muted && audioRecorder) {
-      audioRecorder.on("data", onData).on("volume", setInVolume).start();
-    } else {
-      audioRecorder.stop();
-    }
+
+    audioRecorder.on("error", onAudioError);
+    
     return () => {
-      audioRecorder.off("data", onData).off("volume", setInVolume);
+      audioRecorder.off("error", onAudioError);
     };
-  }, [connected, client, muted, audioRecorder]);
+  }, [audioRecorder]);
 
+  // Separated useEffect for microphone initialization and permission handling
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = activeVideoStream;
-    }
+    const initializeMicrophone = async () => {
+      if (!micInitializedRef.current && !isMicStartingRef.current) {
+        isMicStartingRef.current = true;
+        try {
+          // Request microphone permission explicitly
+          await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            } 
+          });
+          
+          micInitializedRef.current = true;
+          setMicError(null);
+          console.log("Microphone permissions granted");
+        } catch (error) {
+          console.error("Error requesting microphone permissions:", error);
+          setMicError("Could not access microphone. Please check your browser permissions.");
+          setMuted(true); // Force mute if permissions denied
+        } finally {
+          isMicStartingRef.current = false;
+        }
+      }
+    };
 
-    let timeoutId = -1;
+    initializeMicrophone();
+  }, []);
+
+  // Separate effect for audio recording
+  useEffect(() => {
+    let isActive = false;
+    
+    const onData = (base64: string) => {
+      if (connected && !muted && isActive) {
+        client.sendRealtimeInput([
+          {
+            mimeType: "audio/pcm;rate=16000",
+            data: base64,
+          },
+        ]);
+      }
+    };
+
+    const onVolumeChange = (volume: number) => {
+      if (isActive) {
+        setInVolume(volume);
+      }
+    };
+
+    const setupAudioRecorder = async () => {
+      if (connected && !muted && micInitializedRef.current && !isActive) {
+        try {
+          console.log("Starting audio recorder");
+          await audioRecorder
+            .on("data", onData)
+            .on("volume", onVolumeChange)
+            .start();
+          
+          isActive = true;
+          setMicError(null);
+        } catch (error) {
+          console.error("Failed to start audio recorder:", error);
+          setMicError("Failed to start microphone recording");
+          setMuted(true);
+        }
+      } else if ((!connected || muted) && isActive) {
+        console.log("Stopping audio recorder");
+        audioRecorder
+          .off("data", onData)
+          .off("volume", onVolumeChange)
+          .stop();
+        
+        isActive = false;
+      }
+    };
+
+    setupAudioRecorder();
+
+    return () => {
+      if (isActive) {
+        audioRecorder
+          .off("data", onData)
+          .off("volume", onVolumeChange)
+          .stop();
+        
+        isActive = false;
+      }
+    };
+  }, [connected, muted, audioRecorder, client, micInitializedRef]);
+
+  /**
+   * hack a frame every second to capture video
+   */
+  useEffect(() => {
+    let intervalId: any;
 
     function sendVideoFrame() {
-      const video = videoRef.current;
-      const canvas = renderCanvasRef.current;
-
-      if (!video || !canvas) {
-        return;
-      }
-
-      const ctx = canvas.getContext("2d")!;
-      canvas.width = video.videoWidth * 0.25;
-      canvas.height = video.videoHeight * 0.25;
-      if (canvas.width + canvas.height > 0) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL("image/jpeg", 1.0);
-        const data = base64.slice(base64.indexOf(",") + 1, Infinity);
-        client.sendRealtimeInput([{ mimeType: "image/jpeg", data }]);
-      }
-      if (connected) {
-        timeoutId = window.setTimeout(sendVideoFrame, 1000 / 0.5);
+      if (
+        activeVideoStream &&
+        videoRef.current &&
+        renderCanvasRef.current &&
+        connected
+      ) {
+        const video = videoRef.current;
+        const canvas = renderCanvasRef.current;
+        const ctx = canvas.getContext("2d")!;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const scale = Math.min(
+          480 / video.videoWidth,
+          360 / video.videoHeight,
+          1,
+        );
+        ctx.drawImage(
+          video,
+          0,
+          0,
+          canvas.width * scale,
+          canvas.height * scale,
+        );
+        canvas.toBlob(
+          (b) => {
+            if (b) {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64data = reader.result as string;
+                // Extract the base64 data part from the data URL
+                const base64 = base64data.split(',')[1];
+                client.sendRealtimeInput([
+                  {
+                    mimeType: "image/jpeg",
+                    data: base64,
+                  },
+                ]);
+              };
+              reader.readAsDataURL(b);
+            }
+          },
+          "image/jpeg",
+          0.75,
+        );
       }
     }
-    if (connected && activeVideoStream !== null) {
-      requestAnimationFrame(sendVideoFrame);
+
+    if (activeVideoStream && connected) {
+      intervalId = setInterval(sendVideoFrame, 1000);
     }
+
     return () => {
-      clearTimeout(timeoutId);
+      clearInterval(intervalId);
     };
-  }, [connected, activeVideoStream, client, videoRef]);
+  }, [activeVideoStream, videoRef, renderCanvasRef, client, connected]);
 
-  //handler for swapping from one video-stream to the next
   const changeStreams = (next?: UseMediaStreamResult) => async () => {
-    if (next) {
-      const mediaStream = await next.start();
-      setActiveVideoStream(mediaStream);
-      onVideoStreamChange(mediaStream);
-    } else {
+    if (next?.isStreaming) {
+      // Its on already, turn it off
       setActiveVideoStream(null);
       onVideoStreamChange(null);
+      await next.stop();
+    } else {
+      // Turn off all other streams first
+      for (const stream of videoStreams) {
+        if (stream.isStreaming && stream !== next) {
+          await stream.stop();
+        }
+      }
+      if (next) {
+        // turn on new stream
+        const stream = await next.start();
+        if (videoRef?.current) {
+          videoRef.current.srcObject = stream;
+        }
+        if (renderCanvasRef.current) {
+          renderCanvasRef.current.width = 480;
+          renderCanvasRef.current.height = 360;
+        }
+        setActiveVideoStream(stream);
+        onVideoStreamChange(stream);
+      }
+    }
+  };
+
+  const handleMicToggle = async () => {
+    if (isMicStartingRef.current) {
+      console.log("Microphone initialization in progress, please wait");
+      return;
     }
 
-    videoStreams.filter((msr) => msr !== next).forEach((msr) => msr.stop());
+    if (muted) {
+      // Trying to unmute
+      if (!micInitializedRef.current) {
+        isMicStartingRef.current = true;
+        try {
+          // Request microphone permission
+          await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+          
+          micInitializedRef.current = true;
+          setMicError(null);
+          setMuted(false);
+        } catch (error) {
+          console.error("Could not access microphone:", error);
+          setMicError("Could not access microphone. Please check your browser permissions.");
+        } finally {
+          isMicStartingRef.current = false;
+        }
+      } else {
+        // Mic already initialized, just unmute
+        setMuted(false);
+        setMicError(null);
+      }
+    } else {
+      // Simply mute
+      setMuted(true);
+    }
   };
 
   return (
     <section className="control-tray">
-      <canvas style={{ display: "none" }} ref={renderCanvasRef} />
-      <nav className={cn("actions-nav", { disabled: !connected })}>
-        <button
-          className={cn("action-button mic-button")}
-          onClick={() => setMuted(!muted)}
-        >
-          {!muted ? (
-            <span className="material-symbols-outlined filled">mic</span>
-          ) : (
-            <span className="material-symbols-outlined filled">mic_off</span>
-          )}
-        </button>
-
-        <div className="action-button no-action outlined">
-          <AudioPulse volume={volume} active={connected} hover={false} />
+      {micError && (
+        <div className="mic-error-message">
+          {micError}
+          <button onClick={() => setMicError(null)}>Dismiss</button>
         </div>
-
+      )}
+      <div className="controls">
         {supportsVideo && (
           <>
             <MediaStreamButton
-              isStreaming={screenCapture.isStreaming}
-              start={changeStreams(screenCapture)}
-              stop={changeStreams()}
-              onIcon="cancel_presentation"
-              offIcon="present_to_all"
+              isStreaming={webcam.isStreaming}
+              onIcon="videocam"
+              offIcon="videocam_off"
+              start={changeStreams(webcam)}
+              stop={changeStreams(webcam)}
+              label="camera"
             />
             <MediaStreamButton
-              isStreaming={webcam.isStreaming}
-              start={changeStreams(webcam)}
-              stop={changeStreams()}
-              onIcon="videocam_off"
-              offIcon="videocam"
+              isStreaming={screenCapture.isStreaming}
+              onIcon="cast"
+              offIcon="cast"
+              start={changeStreams(screenCapture)}
+              stop={changeStreams(screenCapture)}
+              label="screen share"
             />
           </>
         )}
-        {children}
-      </nav>
+        <button
+          className={cn("control-button", { 
+            "active": !muted, 
+            "disabled": isMicStartingRef.current 
+          })}
+          onClick={handleMicToggle}
+          disabled={isMicStartingRef.current}
+          title={muted ? "Unmute microphone" : "Mute microphone"}
+        >
+          <span className="material-symbols-outlined">
+            {muted ? "mic_off" : "mic"}
+          </span>
+        </button>
 
-      <div className={cn("connection-container", { connected })}>
-        <div className="connection-button-container">
+        {connected ? (
           <button
-            ref={connectButtonRef}
-            className={cn("action-button connect-toggle", { connected })}
-            onClick={connected ? disconnect : connect}
+            className="control-button hang-up"
+            onClick={disconnect}
+            title="End interview"
           >
-            <span className="material-symbols-outlined filled">
-              {connected ? "pause" : "play_arrow"}
-            </span>
+            <span className="material-symbols-outlined">call_end</span>
           </button>
-        </div>
-        <span className="text-indicator">Streaming</span>
+        ) : (
+          <button
+            className="control-button"
+            ref={connectButtonRef}
+            onClick={connect}
+            title="Start interview"
+          >
+            <span className="material-symbols-outlined">call</span>
+          </button>
+        )}
+
+        {children}
       </div>
+      <div className="audio-indicators">
+        {!muted && <AudioPulse active={true} volume={inVolume} hover={false} />}
+        <AudioPulse active={connected} volume={volume} hover={false} />
+      </div>
+      <canvas
+        style={{ display: "none" }}
+        className="render-canvas"
+        ref={renderCanvasRef}
+      />
     </section>
   );
 }
