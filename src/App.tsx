@@ -56,14 +56,23 @@ function App() {
     setAppState('interview');
   };
 
-  const handleInterviewComplete = () => {
-    // End the tracking session when interview is complete
-    if (selectedTopic) {
-      const trackingService = InterviewTrackingService.getInstance();
-      trackingService.endSession();
-      console.log("Interview session ended, transitioning to feedback");
+  const handleInterviewComplete = async () => {
+    // End the current interview session and get the completed session
+    const trackingService = InterviewTrackingService.getInstance();
+    const completedSession = trackingService.endSession();
+    
+    // If we have a valid session, request AI evaluation
+    if (completedSession) {
+      console.log('Interview completed, requesting AI evaluation...');
+      try {
+        // This will happen in the background
+        await trackingService.requestAIEvaluation(completedSession);
+      } catch (error) {
+        console.error('Error requesting AI evaluation:', error);
+      }
     }
     
+    // Update app state to show feedback
     setAppState('feedback');
   };
 

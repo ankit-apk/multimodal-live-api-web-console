@@ -16,6 +16,7 @@
 
 import { InterviewTopic } from "../contexts/LiveAPIContext";
 import { FeedbackScore, InterviewFeedback } from "../components/feedback-scorecard/FeedbackScorecard";
+import { evaluateInterview } from "../lib/gemini-evaluator";
 
 export interface ConversationMessage {
   role: 'user' | 'ai';
@@ -30,6 +31,7 @@ export interface InterviewSession {
   endTime: number | null;
   duration: number;
   messages: ConversationMessage[];
+  aiEvaluation?: any; // Store the AI evaluation results
 }
 
 // Keywords related to each interview topic
@@ -176,6 +178,9 @@ class InterviewTrackingService {
   private currentSession: InterviewSession | null = null;
   private sessionHistory: InterviewSession[] = [];
 
+  private static MINIMUM_INTERVIEW_DURATION = 60; // 60 seconds minimum
+  private static MINIMUM_USER_MESSAGES = 3; // At least 3 user messages
+
   private constructor() {
     // Singleton pattern
   }
@@ -241,13 +246,95 @@ class InterviewTrackingService {
     return this.sessionHistory[this.sessionHistory.length - 1];
   }
 
+  /**
+   * Checks if the interview is substantial enough to be evaluated
+   */
+  private isInterviewSubstantial(session: InterviewSession): boolean {
+    // Check if interview lasted at least the minimum duration
+    if (session.duration < InterviewTrackingService.MINIMUM_INTERVIEW_DURATION) {
+      console.log(`Interview too short: ${session.duration.toFixed(2)}s < ${InterviewTrackingService.MINIMUM_INTERVIEW_DURATION}s`);
+      return false;
+    }
+    
+    // Check if user provided enough messages
+    const userMessages = session.messages.filter(msg => msg.role === 'user');
+    if (userMessages.length < InterviewTrackingService.MINIMUM_USER_MESSAGES) {
+      console.log(`Too few user messages: ${userMessages.length} < ${InterviewTrackingService.MINIMUM_USER_MESSAGES}`);
+      return false;
+    }
+    
+    // Check if there's actual substantial content (not just very short messages)
+    const totalUserContentLength = userMessages.reduce((sum, msg) => sum + msg.content.length, 0);
+    const averageMessageLength = totalUserContentLength / userMessages.length;
+    if (averageMessageLength < 10) { // Average message should be at least 10 chars
+      console.log(`Messages too short: avg length ${averageMessageLength.toFixed(2)} chars`);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Request an evaluation from the Gemini API
+   */
+  public async requestAIEvaluation(session: InterviewSession): Promise<InterviewFeedback | null> {
+    if (!session) return null;
+    
+    try {
+      // Call the gemini-evaluator to get AI-generated feedback
+      const feedback = await evaluateInterview(session);
+      
+      if (feedback) {
+        // Store the evaluation on the session
+        session.aiEvaluation = {
+          evaluated: true,
+          timestamp: Date.now(),
+          feedback: feedback
+        };
+        console.log('AI evaluation complete for interview session');
+      }
+      
+      return feedback;
+    } catch (error) {
+      console.error('Failed to request AI evaluation:', error);
+      return null;
+    }
+  }
+
   public generateFeedback(): InterviewFeedback | null {
     const session = this.getLastSession();
     if (!session) {
       console.warn('No completed interview session available');
       return null;
     }
+    
+    // Check if the interview is substantial enough to evaluate
+    const isSubstantial = this.isInterviewSubstantial(session);
+    
+    if (!isSubstantial) {
+      // Return a special feedback object for insufficient interviews
+      return {
+        overallScore: 0, // No score for insufficient interviews
+        overallFeedback: "Your interview was too brief to provide meaningful feedback. Please participate in a longer interview to receive a complete evaluation.",
+        categoryScores: [],
+        strengths: ["Not enough data to determine strengths."],
+        weaknesses: ["The interview was too short to identify areas for improvement."],
+        nextSteps: [
+          "Try again with a complete interview session",
+          "Aim to engage for at least 2-3 minutes",
+          "Provide detailed responses to interview questions"
+        ]
+      };
+    }
 
+    // If we have stored AI evaluation results, use those
+    if (session.aiEvaluation && session.aiEvaluation.feedback) {
+      return session.aiEvaluation.feedback;
+    }
+    
+    // Otherwise, fall back to the local calculation
+    console.log('No AI evaluation available, using fallback scoring');
+    
     // Calculate topic-specific category scores
     const categoryScores = this.calculateCategoryScores(session);
     

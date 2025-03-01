@@ -18,6 +18,7 @@ import { useState, useEffect } from "react";
 import "./feedback-scorecard.scss";
 import { InterviewTopic } from "../../contexts/LiveAPIContext";
 import InterviewTrackingService from "../../services/InterviewTrackingService";
+import { evaluateInterview } from "../../lib/gemini-evaluator";
 
 export interface FeedbackScore {
   category: string;
@@ -46,20 +47,47 @@ export default function FeedbackScorecard({ topic, onRestart }: FeedbackScorecar
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'details'>('overview');
+  const [buttonFeedback, setButtonFeedback] = useState<string | null>(null);
+  const [interviewTooShort, setInterviewTooShort] = useState(false);
 
-  // Get feedback from the tracking service
+  // Get feedback from the tracking service or AI evaluation
   useEffect(() => {
     const trackingService = InterviewTrackingService.getInstance();
+    const lastSession = trackingService.getLastSession();
     
-    // Simulate API processing time
-    const timer = setTimeout(() => {
+    async function getFeedback() {
       try {
+        // First check if an interview session exists
+        if (!lastSession) {
+          setError("No interview data available");
+          setLoading(false);
+          return;
+        }
+        
+        // Step 1: Try to get AI evaluation
+        const aiFeedback = await evaluateInterview(lastSession);
+        
+        if (aiFeedback) {
+          if (aiFeedback.overallScore === 0) {
+            // Special case: Interview was too short/incomplete
+            setInterviewTooShort(true);
+          }
+          setFeedback(aiFeedback);
+          setLoading(false);
+          return;
+        }
+        
+        // Step 2: Fallback to tracking service if AI evaluation fails
+        console.log("AI evaluation failed, falling back to tracking service");
         const generatedFeedback = trackingService.generateFeedback();
         
         if (generatedFeedback) {
+          if (generatedFeedback.overallScore === 0) {
+            // Special case: Interview was too short/incomplete
+            setInterviewTooShort(true);
+          }
           setFeedback(generatedFeedback);
         } else {
-          // If no session data is available, show an error
           setError("No interview data available for feedback generation");
         }
       } catch (err) {
@@ -68,10 +96,95 @@ export default function FeedbackScorecard({ topic, onRestart }: FeedbackScorecar
       } finally {
         setLoading(false);
       }
+    }
+    
+    // Start the feedback process with a small delay for UX
+    const timer = setTimeout(() => {
+      getFeedback();
     }, 1500);
     
     return () => clearTimeout(timer);
   }, [topic]);
+
+  // Add these functions for sharing and downloading
+  const handleShareResults = () => {
+    if (!feedback) return;
+    
+    setButtonFeedback('share');
+    setTimeout(() => setButtonFeedback(null), 2000);
+    
+    if (navigator.share) {
+      navigator.share({
+        title: `${topic.title} Interview Feedback`,
+        text: `I scored ${feedback.overallScore}/100 on my ${topic.title} interview practice!`,
+        url: window.location.href,
+      }).catch(error => {
+        console.log('Error sharing:', error);
+        // Fallback for when sharing fails
+        copyToClipboard();
+      });
+    } else {
+      // Fallback for browsers that don't support navigator.share
+      copyToClipboard();
+    }
+  };
+
+  const copyToClipboard = () => {
+    if (!feedback) return;
+    
+    const text = `${topic.title} Interview Feedback: Overall Score ${feedback.overallScore}/100\n${feedback.overallFeedback}`;
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setButtonFeedback('copied');
+        setTimeout(() => setButtonFeedback(null), 2000);
+      })
+      .catch(err => {
+        console.error('Failed to copy: ', err);
+        setButtonFeedback('error');
+        setTimeout(() => setButtonFeedback(null), 2000);
+      });
+  };
+
+  const handleDownloadReport = () => {
+    if (!feedback) return;
+    
+    setButtonFeedback('download');
+    setTimeout(() => setButtonFeedback(null), 2000);
+    
+    // Create a text report
+    const reportContent = `
+    ${topic.title} INTERVIEW FEEDBACK REPORT
+    ===============================
+    Overall Score: ${feedback.overallScore}/100
+    
+    ${feedback.overallFeedback}
+    
+    STRENGTHS:
+    ${feedback.strengths.map(s => `- ${s}`).join('\n')}
+    
+    AREAS FOR IMPROVEMENT:
+    ${feedback.weaknesses.map(w => `- ${w}`).join('\n')}
+    
+    NEXT STEPS:
+    ${feedback.nextSteps.map(n => `- ${n}`).join('\n')}
+    
+    DETAILED CATEGORY SCORES:
+    ${feedback.categoryScores.map(c => 
+      `${c.category}: ${c.score}/100 ${c.notCovered ? '(Not fully covered)' : ''}\n${c.feedback}`
+    ).join('\n\n')}
+    `;
+    
+    // Create a blob and download it
+    const blob = new Blob([reportContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${topic.title.toLowerCase().replace(/\s+/g, '-')}-interview-feedback.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) {
     return (
@@ -96,6 +209,26 @@ export default function FeedbackScorecard({ topic, onRestart }: FeedbackScorecar
     );
   }
 
+  // Special UI for too-short interviews
+  if (interviewTooShort) {
+    return (
+      <div className="feedback-scorecard error">
+        <div className="error-message">
+          <span className="material-symbols-outlined">timer</span>
+          <h2>Interview Too Brief</h2>
+          <p>Your interview was too short to provide a meaningful evaluation. For an accurate assessment, please:</p>
+          <ul className="error-tips">
+            <li>Participate for at least 1-2 minutes</li>
+            <li>Answer multiple questions in detail</li>
+            <li>Engage with the interviewer's questions</li>
+          </ul>
+          <button onClick={onRestart} className="try-again-button">Try Again</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Regular feedback UI for good interviews
   return (
     <div className="feedback-scorecard">
       <div className="scorecard-header">
@@ -230,13 +363,18 @@ export default function FeedbackScorecard({ topic, onRestart }: FeedbackScorecar
           <span className="material-symbols-outlined">refresh</span>
           Try Another Interview
         </button>
-        <button className="action-button">
-          <span className="material-symbols-outlined">share</span>
-          Share Results
+        <button className="action-button" onClick={handleShareResults}>
+          <span className="material-symbols-outlined">
+            {buttonFeedback === 'share' || buttonFeedback === 'copied' ? 'check_circle' : 'share'}
+          </span>
+          {buttonFeedback === 'share' ? 'Sharing...' : 
+           buttonFeedback === 'copied' ? 'Copied!' : 'Share Results'}
         </button>
-        <button className="action-button">
-          <span className="material-symbols-outlined">download</span>
-          Download Report
+        <button className="action-button" onClick={handleDownloadReport}>
+          <span className="material-symbols-outlined">
+            {buttonFeedback === 'download' ? 'check_circle' : 'download'}
+          </span>
+          {buttonFeedback === 'download' ? 'Downloaded!' : 'Download Report'}
         </button>
       </div>
     </div>
