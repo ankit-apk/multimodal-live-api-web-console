@@ -20,6 +20,8 @@ import { LiveAPIProvider } from "./contexts/LiveAPIContext";
 import { Altair } from "./components/altair/Altair";
 import ControlTray from "./components/control-tray/ControlTray";
 import TopicSelection from "./components/topic-selection/TopicSelection";
+import FeedbackScorecard from "./components/feedback-scorecard/FeedbackScorecard";
+import InterviewTrackingService from "./services/InterviewTrackingService";
 import cn from "classnames";
 
 // No need to get API key in frontend as it's now handled by the proxy server
@@ -34,6 +36,9 @@ interface InterviewTopic {
   icon: string;
 }
 
+// Define application states
+type AppState = 'selection' | 'interview' | 'feedback';
+
 function App() {
   // this video reference is used for displaying the active stream, whether that is the webcam or screen capture
   // feel free to style as you see fit
@@ -42,10 +47,29 @@ function App() {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   // Track selected interview topic
   const [selectedTopic, setSelectedTopic] = useState<InterviewTopic | null>(null);
+  // Track application state
+  const [appState, setAppState] = useState<AppState>('selection');
 
   const handleTopicSelect = (topic: InterviewTopic) => {
     console.log("Selected topic:", topic);
     setSelectedTopic(topic);
+    setAppState('interview');
+  };
+
+  const handleInterviewComplete = () => {
+    // End the tracking session when interview is complete
+    if (selectedTopic) {
+      const trackingService = InterviewTrackingService.getInstance();
+      trackingService.endSession();
+      console.log("Interview session ended, transitioning to feedback");
+    }
+    
+    setAppState('feedback');
+  };
+
+  const handleRestartInterview = () => {
+    setSelectedTopic(null);
+    setAppState('selection');
   };
 
   return (
@@ -54,18 +78,31 @@ function App() {
         url={proxyUri} 
         topic={selectedTopic || undefined}
       >
-        {!selectedTopic ? (
+        {appState === 'selection' ? (
           <TopicSelection onTopicSelect={handleTopicSelect} />
+        ) : appState === 'feedback' && selectedTopic ? (
+          <FeedbackScorecard topic={selectedTopic} onRestart={handleRestartInterview} />
         ) : (
           <div className="meet-container">
             <header className="meet-header">
               <div className="meet-logo">AI Interview Prep</div>
               <div className="meet-info">
-                {selectedTopic.title} Interview
-                <div className="topic-description">{selectedTopic.description}</div>
+                {selectedTopic?.title} Interview
+                <div className="topic-description">{selectedTopic?.description}</div>
               </div>
               <div className="meet-actions">
-                <button className="action-button" onClick={() => setSelectedTopic(null)} title="Change topic">
+                <button 
+                  className="action-button" 
+                  onClick={handleInterviewComplete} 
+                  title="End interview and view feedback"
+                >
+                  <span className="material-symbols-outlined">done</span>
+                </button>
+                <button 
+                  className="action-button" 
+                  onClick={() => setSelectedTopic(null)} 
+                  title="Change topic"
+                >
                   <span className="material-symbols-outlined">refresh</span>
                 </button>
                 <button className="action-button" title="More information">
@@ -104,7 +141,15 @@ function App() {
                   videoRef={videoRef}
                   supportsVideo={true}
                   onVideoStreamChange={setVideoStream}
-                />
+                >
+                  <button 
+                    className="control-button interview-complete" 
+                    onClick={handleInterviewComplete}
+                    title="End interview and view feedback"
+                  >
+                    <span className="material-symbols-outlined">assessment</span>
+                  </button>
+                </ControlTray>
               </main>
             </div>
           </div>

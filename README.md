@@ -130,3 +130,71 @@ Your app is ready to be deployed!
 See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
 _This is an experiment showcasing the Multimodal Live API, not an official Google product. We'll do our best to support and maintain this experiment but your mileage may vary. We encourage open sourcing projects as a way of learning from each other. Please respect our and other creators' rights, including copyright and trademark rights when present, when sharing these works and creating derivative work. If you want more info on Google's policy, you can find that [here](https://developers.google.com/terms/site-policies)._
+
+# AI Interview Prep Application
+
+An interactive interview practice application with real-time AI interviewer and performance analytics.
+
+## Features
+
+- **Topic-Specific Interviews**: Choose from various professional domains (Software Engineering, Product Management, etc.)
+- **Real-time Conversation**: Natural dialogue with AI interviewer
+- **Live Video**: Optional video capability for realistic interview experience
+- **Performance Analytics**: Detailed feedback on interview performance
+- **Functional Scoring System**: Objective evaluation of your interview skills
+
+## Functional Scoring System
+
+The application features a robust interview analytics system that provides meaningful feedback based on your actual interview performance:
+
+### How It Works
+
+1. **Conversation Tracking**: The system records the entire interview conversation, including:
+
+   - User responses (content and timing)
+   - AI interviewer questions and feedback
+   - Response patterns and engagement metrics
+
+2. **Performance Analysis**: Once the interview is complete, the system analyzes:
+
+   - **Relevance**: How well your answers match the topic-specific keywords and requirements
+   - **Response Quality**: Length, structure, and substance of your answers
+   - **Engagement**: Response timing and consistency
+   - **Consistency**: Variation in your responses throughout the interview
+
+3. **Scoring Algorithm**:
+   - Category-specific scores (Technical Knowledge, Communication, etc.)
+   - Overall interview performance score
+   - Identification of strengths and areas for improvement
+   - Personalized improvement tips
+
+### Scoring Categories
+
+Each interview type has specific scoring categories relevant to the role:
+
+- **Software Engineering**: Technical Knowledge, Problem Solving, Code Quality, System Design, Communication
+- **Product Management**: Product Strategy, User Insights, Prioritization, Cross-functional Collaboration, Communication
+- **Data Science**: Statistical Knowledge, Data Manipulation, Machine Learning, Problem Analysis, Communication
+- **UX Design**: Design Thinking, User Research, Visual Design, Prototyping, Communication
+- **Leadership**: Strategic Thinking, Team Management, Decision Making, Conflict Resolution, Communication
+
+### Improvement Tips
+
+Based on your performance, the system provides actionable advice on how to improve your interview skills in each category, helping you prepare for your next real interview.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v14 or higher)
+- npm or yarn
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Start the development server: `npm start`
+
+## License
+
+Licensed under the Apache License, Version 2.0

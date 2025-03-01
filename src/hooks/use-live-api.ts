@@ -23,6 +23,7 @@ import { LiveConfig } from "../multimodal-live-types";
 import { AudioStreamer } from "../lib/audio-streamer";
 import { audioContext } from "../lib/utils";
 import VolMeterWorket from "../lib/worklets/vol-meter";
+import InterviewTrackingService from "../services/InterviewTrackingService";
 
 export type UseLiveAPIResults = {
   client: MultimodalLiveClient;
@@ -48,6 +49,20 @@ export function useLiveAPI({
 
   const [connected, setConnected] = useState(false);
   
+  // Track if we've initialized the session
+  const sessionInitialized = useRef(false);
+  
+  // Initialize tracking service session when topic is set
+  useEffect(() => {
+    if (topic && !sessionInitialized.current) {
+      const trackingService = InterviewTrackingService.getInstance();
+      trackingService.startSession(topic);
+      sessionInitialized.current = true;
+      
+      console.log(`Started tracking interview session for topic: ${topic.title}`);
+    }
+  }, [topic]);
+  
   // Include the interview topic in the system instructions if provided
   const [config, setConfig] = useState<LiveConfig>(() => {
     const baseConfig: LiveConfig = {
@@ -56,11 +71,44 @@ export function useLiveAPI({
     
     // If a topic is provided, add system instructions for the interview
     if (topic) {
+      // Get the evaluation categories for this topic
+      const getCategories = (topicId: string): string[] => {
+        switch(topicId) {
+          case 'software-engineering':
+            return ['Technical Knowledge', 'Problem Solving', 'Code Quality', 'System Design', 'Communication'];
+          case 'product-management':
+            return ['Product Strategy', 'User Insights', 'Prioritization', 'Cross-functional Collaboration', 'Communication'];
+          case 'data-science':
+            return ['Statistical Knowledge', 'Data Manipulation', 'Machine Learning', 'Problem Analysis', 'Communication'];
+          case 'ux-design':
+            return ['Design Thinking', 'User Research', 'Visual Design', 'Prototyping', 'Communication'];
+          case 'leadership':
+            return ['Strategic Thinking', 'Team Management', 'Decision Making', 'Conflict Resolution', 'Communication'];
+          default:
+            return ['Subject Knowledge', 'Critical Thinking', 'Communication', 'Problem Solving', 'Adaptability'];
+        }
+      };
+      
+      const categories = getCategories(topic.id);
+      const categoriesText = categories.join(', ');
+      
       baseConfig.systemInstruction = {
         parts: [
           {
             text: `You are an AI interviewer for a ${topic.title} position. 
 This is a ${topic.title} interview focusing on: ${topic.description}.
+
+EVALUATION CATEGORIES:
+The candidate will be evaluated on these specific categories: ${categoriesText}.
+
+INTERVIEW STRUCTURE:
+1. Introduction: Briefly introduce yourself and explain the interview process.
+2. Category Questions: Ask questions that specifically cover each evaluation category.
+   - For each category, ask at least one question directly related to that skill.
+   - Clearly indicate which category you're exploring with each question.
+3. Scenario-Based Questions: Present realistic scenarios related to the role.
+4. Final Question: Give the candidate a chance to ask questions or share final thoughts.
+
 Ask relevant questions for this role, challenge the candidate with real-world scenarios, and provide feedback.
 Your tone should be professional but conversational.
 Structure the interview progressively from easier to more challenging questions.
@@ -105,6 +153,8 @@ Start by introducing yourself and the purpose of the interview.`
   }, [audioStreamerRef]);
 
   useEffect(() => {
+    if (!client) return;
+    
     const onClose = () => {
       setConnected(false);
     };
@@ -113,19 +163,78 @@ Start by introducing yourself and the purpose of the interview.`
 
     const onAudio = (data: ArrayBuffer) =>
       audioStreamerRef.current?.addPCM16(new Uint8Array(data));
+      
+    // Track AI responses
+    const onContent = (content: any) => {
+      if (topic && sessionInitialized.current) {
+        const trackingService = InterviewTrackingService.getInstance();
+        // Extract the text content from the response
+        let text = '';
+        
+        if (content && content.modelTurn && content.modelTurn.parts) {
+          // Find text parts in the modelTurn
+          const textParts = content.modelTurn.parts.filter(
+            (part: any) => part.text && typeof part.text === 'string'
+          );
+          
+          if (textParts.length > 0) {
+            text = textParts.map((part: any) => part.text).join(' ');
+          }
+        }
+        
+        if (text) {
+          trackingService.addMessage('ai', text);
+        }
+      }
+    };
+
+    // Create a wrapper for the client.send method to track user messages
+    const originalSend = client.send;
+    client.send = function(parts: any, turnComplete: boolean = true) {
+      // Track user message before sending
+      if (topic && sessionInitialized.current) {
+        const trackingService = InterviewTrackingService.getInstance();
+        
+        // Extract text from parts
+        if (parts) {
+          let text = '';
+          const partsArray = Array.isArray(parts) ? parts : [parts];
+          
+          partsArray.forEach(part => {
+            if (part && part.text && typeof part.text === 'string') {
+              text += part.text + ' ';
+            }
+          });
+          
+          if (text.trim()) {
+            trackingService.addMessage('user', text.trim());
+          }
+        }
+      }
+      
+      // Call the original method
+      return originalSend.call(client, parts, turnComplete);
+    };
 
     client
       .on("close", onClose)
       .on("interrupted", stopAudioStreamer)
-      .on("audio", onAudio);
+      .on("audio", onAudio)
+      .on("content", onContent);
 
     return () => {
+      // Restore original send method
+      if (client.send !== originalSend) {
+        client.send = originalSend;
+      }
+      
       client
         .off("close", onClose)
         .off("interrupted", stopAudioStreamer)
-        .off("audio", onAudio);
+        .off("audio", onAudio)
+        .off("content", onContent);
     };
-  }, [client]);
+  }, [client, topic]);
 
   const connect = useCallback(async () => {
     console.log(config);
